@@ -13,13 +13,42 @@ from typing import Any, Dict, List
 from support import (MODEL, SYSTEM_PROMPT, call_local, execute_tool, mcp_client,
                      new_session, next_available_day, record_tool_result,
                      runtime_preamble)
+from support import mock_backend as backend
 
 MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
 
 TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence goal
-EXTRA_TOOLS: List[Dict[str, Any]] = []   # ✏️ Build 2, step 2.1: schemas for the tools you add
-LOCAL_TOOLS: Dict[str, Any] = {}         # ✏️ Build 2, step 2.1: the functions behind them
+EXTRA_TOOLS: List[Dict[str, Any]] = [
+    {
+        "name":"fare_rules",
+        "description":(
+           "Returns the written text of Larkspur's Handbook. Use it to quote or "
+            "explain the rule and the reason behind it. It explains how rules "
+            "differ when the disruption is within vs outside Larkspur's control, "
+            "and the per-passenger care tables (meals, hotel, ground transport). "
+            "It does NOT look at the customer's booking or decide what they get; "
+            "call check_policy for that. For 'why' or 'what does the rule say' questions, "
+            "call this after check_policy and base your explanation on the handbook text."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    }
+]
 
+def fare_rules():
+    try:
+        text = (backend.DATA_DIR / "fare_rules_excerpt.md").read_text(encoding="utf-8")
+    except (FileNotFoundError, AttributeError) as e:
+        return {"error": str(e)}
+    
+    return {"handbook_text": text}
+
+LOCAL_TOOLS: Dict[str, Any] = {
+    "fare_rules": fare_rules
+}
 
 def text_of(response) -> str:
     """Given. The last non-empty text block, never content[0]."""
@@ -68,14 +97,14 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
     answer = ""
     turns = 1
     while response.stop_reason == "tool_use" and turns < MAX_TOOL_CALLS:
-        messages.append({"role": "assistant", "content": text_of(response)})
+        messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results(response)})
-        answer = text_of(response)
         response = client.messages.create(
             model=MODEL, max_tokens=4096, system=runtime_preamble() + SYSTEM_PROMPT + TONE_ADDENDUM,
             thinking={"type": "adaptive"}, tools=tools, messages=messages,
         )
         turns += 1
+    answer = text_of(response)
 
     return answer
 
@@ -119,14 +148,14 @@ def build_tools() -> List[Dict[str, Any]]:                 # ✏️ Build 1, ste
                 "type": "object",
                 "properties": {
                     "flight_no": {"type": "string"},
-                    "date": {"type": "string", "description": "MM/DD/YYYY"},
+                    "date": {"type": "string", "description": "YYYY-MM-DD"},
                 },
                 "required": ["flight_no", "date"],
             },
         },
         {
             "name": "search_alternatives",
-            "description": "search",
+            "description": "Search for alternate flights if the get_flight_status returns an empty list.",
             "input_schema": {
                 "type": "object",
                 "properties": {"pnr": {"type": "string"}},
@@ -207,8 +236,10 @@ def build_tools() -> List[Dict[str, Any]]:                 # ✏️ Build 1, ste
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "pnr": {"type": "string"}, "reason": {"type": "string"},
-                    "summary_for_human": {"type": "string"}, "queue": {"type": "string"},
+                    "pnr": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "summary_for_human": {"type": "string"}, 
+                    "queue": {"type": "string"},
                 },
                 "required": ["pnr", "reason", "summary_for_human"],
             },
