@@ -12,7 +12,7 @@ The review reads these names. Nothing else comes off the list. Your team still
 decides in the moment who does what.
 
 - Manoj Karthik
-- Anna Macdonlad
+- Anna Macdonald
 - Ahmed Mahran
 - Chetana Bangaradka
 - Aarthi Kamath
